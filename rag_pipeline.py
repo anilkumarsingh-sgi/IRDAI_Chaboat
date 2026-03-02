@@ -152,6 +152,18 @@ class IRDAIVectorStore:
     def build(self, documents: List[Dict]):
         """Chunk documents, embed, build numpy-based vector index."""
         logger.info(f"Building vector store from {len(documents)} documents...")
+        
+        # Handle empty documents case
+        if not documents:
+            logger.warning("⚠️ No documents provided to build vector store")
+            self.chunks = []
+            self.metadata = []
+            # Create empty embeddings array with correct dimensions
+            dim = 384  # sentence-transformers/all-MiniLM-L6-v2 dimension
+            self.embeddings = np.zeros((0, dim), dtype="float32")
+            logger.info("✅ Empty vector store initialized")
+            return
+        
         self.chunks = []
         self.metadata = []
 
@@ -168,6 +180,14 @@ class IRDAIVectorStore:
                 })
 
         logger.info(f"Total chunks: {len(self.chunks)}")
+
+        # Handle case where chunks list is empty after processing
+        if not self.chunks:
+            logger.warning("⚠️ No chunks generated from documents")
+            dim = 384
+            self.embeddings = np.zeros((0, dim), dtype="float32")
+            logger.info("✅ Empty vector store initialized")
+            return
 
         # Embed in batches with progress
         batch_size = 128  # Larger batch for faster processing

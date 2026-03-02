@@ -238,25 +238,75 @@ with st.sidebar:
     elif data_source == "Google Drive":
         st.info("📌 To use Google Drive data:")
         st.markdown("""
-        1. Share your Google Drive folder with public access (anyone with link)
-        2. Get the folder ID from the URL: `https://drive.google.com/drive/folders/FOLDER_ID`
-        3. Paste it below
+        **Option A: Folder ID** (Recommended)
+        1. Open your Google Drive folder
+        2. Copy the folder ID from the URL: `https://drive.google.com/drive/folders/**FOLDER_ID**`
+        3. Paste just the ID below
+        
+        **Option B: Folder URL**
+        - Paste the full folder URL: `https://drive.google.com/drive/folders/1A4x5VzG3kH4...`
         """)
-        gdrive_folder_id = st.text_input(
-            "Google Drive Folder ID",
+        
+        gdrive_input = st.text_input(
+            "Google Drive Folder ID or URL",
             placeholder="e.g. 1A4x5VzG3kH4jk5L6mN7oP8qR9sT0uV1w",
-            help="The folder should contain crawled_data.json and pdfs/"
+            help="Folder should contain PDFs to index"
         )
-        if gdrive_folder_id:
+        
+        if gdrive_input and gdrive_input.strip():
             try:
-                # Create Google Drive data directory
-                gdrive_data_path = f"gdrive://{gdrive_folder_id}"
-                if gdrive_data_path != st.session_state.data_dir:
-                    st.session_state.data_dir = gdrive_data_path
+                import re
+                
+                # Extract folder ID from URL or use as-is
+                folder_id = gdrive_input.strip()
+                
+                # Check if it's a URL and extract ID
+                if "drive.google.com" in folder_id:
+                    match = re.search(r'/folders/([a-zA-Z0-9-_]+)', folder_id)
+                    if match:
+                        folder_id = match.group(1)
+                    else:
+                        st.error("❌ Could not extract folder ID from URL. Please use: https://drive.google.com/drive/folders/FOLDER_ID")
+                        folder_id = None
+                
+                if folder_id and folder_id != st.session_state.data_dir:
+                    # Mark for downloading
+                    st.session_state.gdrive_folder_id = folder_id
+                    st.session_state.data_dir = None  # Will be set after download
                     st.cache_resource.clear()
-                    st.success(f"✅ Google Drive folder set!")
+                    st.info(f"✅ Google Drive folder ID set: {folder_id}")
+                    st.info("Click 🔧 Reindex to download and index your PDFs")
+                    
+                    # Show download status
+                    with st.spinner("Downloading PDFs from Google Drive..."):
+                        try:
+                            import gdown
+                            import zipfile
+                            
+                            # Download folder as zip
+                            gdrive_download_path = Path("data/gdrive_temp")
+                            gdrive_download_path.mkdir(parents=True, exist_ok=True)
+                            
+                            zip_path = gdrive_download_path / "folder.zip"
+                            
+                            # Download using gdown
+                            url = f"https://drive.google.com/uc?id={folder_id}&export=download"
+                            gdown.download(url, str(zip_path), quiet=False)
+                            
+                            # Extract zip
+                            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                                zip_ref.extractall(gdrive_download_path)
+                            
+                            st.session_state.data_dir = str(gdrive_download_path)
+                            st.success(f"✅ Downloaded {len(list(gdrive_download_path.glob('**/*.pdf')))} PDFs from Google Drive")
+                        except Exception as e:
+                            st.warning(f"⚠️ Could not auto-download. Make sure folder is shared publicly.")
+                            st.info("Alternative: Download manually from Drive and use 'Local Folder' option")
+                            st.session_state.gdrive_folder_id = folder_id
+                            
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error: {str(e)[:200]}")
+
     
     elif data_source == "Upload Files":
         st.info("📌 Upload your data files:")

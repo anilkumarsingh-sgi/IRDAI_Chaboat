@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  irdai-chatbot:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - HF_API_KEY=${HF_API_KEY}
+    restart: unless-stopped

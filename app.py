@@ -224,8 +224,15 @@ with st.sidebar:
             placeholder="e.g. C:\\data\\irdai or /home/user/irdai",
             help="Path to folder containing crawled_data.json and pdfs/ subfolder"
         )
-        if data_dir != st.session_state.data_dir:
-            st.session_state.data_dir = data_dir if data_dir.strip() else None
+        if data_dir and data_dir.strip():
+            data_dir = data_dir.strip()
+            if data_dir != st.session_state.data_dir:
+                st.session_state.data_dir = data_dir
+                st.cache_resource.clear()
+                st.info(f"✅ Data folder set to: {data_dir}")
+                st.info("Click 🔧 Reindex below to build the knowledge base")
+        elif data_dir == "" and st.session_state.data_dir:
+            st.session_state.data_dir = None
             st.cache_resource.clear()
     
     elif data_source == "Google Drive":
@@ -352,15 +359,23 @@ if st.session_state.data_dir:
     vs_path = Path(st.session_state.data_dir) / "vectorstore" / "irdai.faiss"
 else:
     # Default to local 'data' folder (e.g., e:\IRDAI_chatboat_new\data)
-    vs_path = Path("data/vectorstore/irdai.faiss")
+    vs_path = Path("data/vectorstore/embeddings.npy")
 index_exists = vs_path.exists()
 
 if index_exists:
     with st.spinner("Loading knowledge base..."):
-        vs = load_vs(st.session_state.data_dir)
-        if vs.is_ready:
-            st.session_state.vs_ready = True
-            st.session_state.vs_stats = vs.stats
+        try:
+            vs = load_vs(st.session_state.data_dir)
+            if vs.is_ready:
+                st.session_state.vs_ready = True
+                st.session_state.vs_stats = vs.stats
+            else:
+                vs = None
+                st.session_state.vs_ready = False
+        except Exception as e:
+            st.warning(f"Could not load vectorstore: {e}")
+            vs = None
+            st.session_state.vs_ready = False
 else:
     vs = None
     st.session_state.vs_ready = False
@@ -391,13 +406,25 @@ if start_crawl:
             s.update(label=f"❌ {e}", state="error")
 
 if rebuild_idx:
-    with st.spinner("Rebuilding index..."):
-        from rag_pipeline import rebuild_vector_store
-        new_vs = rebuild_vector_store(st.session_state.data_dir)
-        st.cache_resource.clear()
-        st.session_state.vs_ready = True
-        st.session_state.vs_stats = new_vs.stats
-    st.success("✅ Rebuilt!"); st.rerun()
+    if not st.session_state.data_dir:
+        st.error("❌ No data folder selected. Please select 'Local Folder' and provide a path first.")
+    else:
+        with st.spinner(f"Rebuilding index from {st.session_state.data_dir}..."):
+            try:
+                from rag_pipeline import rebuild_vector_store
+                new_vs = rebuild_vector_store(st.session_state.data_dir)
+                st.cache_resource.clear()
+                
+                if new_vs.is_ready and len(new_vs.chunks) > 0:
+                    st.session_state.vs_ready = True
+                    st.session_state.vs_stats = new_vs.stats
+                    st.success(f"✅ Rebuilt! {len(new_vs.chunks):,} chunks indexed")
+                    st.rerun()
+                else:
+                    st.warning(f"⚠️ No documents found in {st.session_state.data_dir}")
+                    st.info("Make sure the folder contains PDFs in a 'pdfs/' subfolder or crawled_data.json")
+            except Exception as e:
+                st.error(f"❌ Error rebuilding index: {str(e)[:200]}")
 
 if auto_update:
     from scheduler import start_scheduler
